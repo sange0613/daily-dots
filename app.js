@@ -18,7 +18,8 @@ const paths = {
   chart: '<path d="M4 4v16h16M8 16v-4m5 4V8m5 8v-6"/>',
   widgets: '<rect x="4" y="6" width="12" height="13" rx="2"/><path d="M9 3h9a2 2 0 0 1 2 2v10"/>',
   left: '<path d="m14 6-6 6 6 6"/>',
-  ring: '<circle cx="12" cy="12" r="6" stroke-dasharray="1 5"/>'
+  ring: '<circle cx="12" cy="12" r="6" stroke-dasharray="1 5"/>',
+  contrast: '<circle cx="12" cy="12" r="8"/><path fill="currentColor" stroke="none" d="M12 4a8 8 0 0 1 0 16Z"/>'
 };
 const iconNames = { book:"书本", leaf:"叶子", pen:"铅笔", activity:"心率", water:"水滴", moon:"月亮", study:"学士帽", walk:"散步", note:"笔记", code:"代码", star:"星星" };
 const toneNames = { violet:"紫色", green:"绿色", orange:"杏色", blue:"蓝色", rose:"玫瑰色", gold:"沙色" };
@@ -33,6 +34,7 @@ const nav = [["overview", "总览", "grid"], ["trends", "统计", "chart"], ["wi
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const periods = { week:"周", month:"月", year:"年" };
 const storageKey = "daily-dots.web.v1";
+const themeKey = "daily-dots.theme";
 const app = document.querySelector("#app");
 const editor = document.querySelector("#editor");
 const nameInput = document.querySelector("#habit-name");
@@ -47,6 +49,7 @@ let period = "month";
 let trendsPeriod = "week";
 let store = loadStore();
 let preview = store.mode === "demo";
+let monochrome = loadTheme();
 let editing;
 let noticeTimer;
 let initialNavigation = true;
@@ -116,6 +119,27 @@ function loadStore() {
   }
   return { mode: "demo", demo: makeHabits(true), mine: makeHabits(false) };
 }
+function loadTheme() {
+  try {
+    return localStorage.getItem(themeKey) === "monochrome";
+  } catch {
+    return false;
+  }
+}
+function applyTheme() {
+  document.documentElement.dataset.theme = monochrome ? "monochrome" : "lavender";
+  document.querySelector('meta[name="theme-color"]').content = monochrome ? "#f5f5f5" : "#f5f3f8";
+  app.querySelector('[data-action="theme"]')?.setAttribute("aria-pressed", String(monochrome));
+}
+function toggleTheme() {
+  monochrome = !monochrome;
+  applyTheme();
+  try {
+    localStorage.setItem(themeKey, monochrome ? "monochrome" : "lavender");
+  } catch {
+    notify("当前浏览器无法记住主题选择");
+  }
+}
 function save() {
   try {
     localStorage.setItem(storageKey, JSON.stringify(store));
@@ -173,9 +197,14 @@ function pageTitle(title, eyebrow) {
   return `<header class="page-head"><div>
     ${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ""}
     <h1>${title}</h1></div>
-    <button class="chip" data-action="mode" aria-label="${preview ? "当前为示例数据，切换到我的记录" : "当前为我的记录，切换到示例"}">
-      <span>${preview ? "示例 · 开始使用" : "我的记录"}</span>
-    </button>
+    <div class="page-actions">
+      <button class="chip" data-action="mode" aria-label="${preview ? "当前为示例数据，切换到我的记录" : "当前为我的记录，切换到示例"}">
+        <span>${preview ? "示例 · 开始使用" : "我的记录"}</span>
+      </button>
+      <button class="theme-toggle" data-action="theme" aria-label="黑白主题" aria-pressed="${monochrome}">
+        ${glyph("contrast")}<span>黑白</span>
+      </button>
+    </div>
   </header>`;
 }
 function dock(page) {
@@ -369,6 +398,7 @@ document.addEventListener("click", event => {
       });
       break;
     }
+    case "theme": toggleTheme(); break;
     case "mode":
       preview = !preview;
       store.mode = preview ? "demo" : "mine";
@@ -401,10 +431,15 @@ window.addEventListener("hashchange", navigate);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshDate(); });
 window.addEventListener("focus", refreshDate);
 window.addEventListener("storage", event => {
-  if (event.key !== storageKey) return;
+  if (event.key === themeKey || event.key === null) {
+    monochrome = loadTheme();
+    applyTheme();
+  }
+  if (event.key !== storageKey && event.key !== null) return;
   store = loadStore();
   preview = store.mode === "demo";
   render();
 });
 setInterval(refreshDate, 30_000);
+applyTheme();
 navigate();

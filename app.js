@@ -18,6 +18,8 @@ const paths = {
   chart: '<path d="M4 4v16h16M8 16v-4m5 4V8m5 8v-6"/>',
   widgets: '<rect x="4" y="6" width="12" height="13" rx="2"/><path d="M9 3h9a2 2 0 0 1 2 2v10"/>',
   left: '<path d="m14 6-6 6 6 6"/>',
+  up: '<path d="m6 14 6-6 6 6"/>',
+  down: '<path d="m6 10 6 6 6-6"/>',
   ring: '<circle cx="12" cy="12" r="6" stroke-dasharray="1 5"/>',
   contrast: '<circle cx="12" cy="12" r="8"/><path fill="currentColor" stroke="none" d="M12 4a8 8 0 0 1 0 16Z"/>'
 };
@@ -37,6 +39,12 @@ const storageKey = "daily-dots.web.v1";
 const themeKey = "daily-dots.theme";
 const app = document.querySelector("#app");
 const editor = document.querySelector("#editor");
+const manager = document.querySelector("#manager");
+const managerList = document.querySelector("#manager-list");
+const editActions = document.querySelector("#edit-actions");
+const archiveAction = document.querySelector("#archive-action");
+const deleteConfirmation = document.querySelector("#delete-confirmation");
+const deleteDescription = document.querySelector("#delete-description");
 const nameInput = document.querySelector("#habit-name");
 const notice = document.querySelector("#notice");
 const zhFull = new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" });
@@ -51,6 +59,7 @@ let store = loadStore();
 let preview = store.mode === "demo";
 let monochrome = loadTheme();
 let editing;
+let editingExisting = false;
 let noticeTimer;
 let initialNavigation = true;
 
@@ -152,6 +161,9 @@ function save() {
 function habits() {
   return preview ? store.demo : store.mine;
 }
+function activeHabits() {
+  return habits().filter(habit => !habit.archived);
+}
 function route() {
   const [page, id] = location.hash.slice(1).split("/");
   const habit = page === "habit" ? habits().find(item => item.id === id) : undefined;
@@ -170,12 +182,12 @@ function notify(text) {
   notice.textContent = text;
   noticeTimer = setTimeout(() => { notice.hidden = true; }, 2600);
 }
-function totalOn(key) {
-  return habits().filter(item => item.days.includes(key)).length;
+function totalOn(key, list = habits()) {
+  return list.filter(item => item.days.includes(key)).length;
 }
 function toggle(id, key) {
   const habit = habits().find(item => item.id === id);
-  if (!habit || !key || key > today) return;
+  if (!habit || habit.archived || !key || key > today) return;
   const index = habit.days.indexOf(key);
   if (index >= 0) habit.days.splice(index, 1);
   else habit.days.push(key);
@@ -208,8 +220,8 @@ function pageTitle(title, eyebrow) {
   </header>`;
 }
 function dock(page) {
-  return `<nav class="dock" aria-label="主导航"><div class="dock-inner"><div class="tabs">
-    ${nav.map(([id, title, image]) => `<button class="tab" data-action="nav" data-key="${id}" ${id === page ? 'aria-current="page"' : ""}>
+  return `<nav class="dock${page === "habit" ? " split-dock" : ""}" aria-label="主导航"><div class="dock-inner"><div class="tabs">
+    ${nav.map(([id, title, image]) => `<button class="tab" data-action="nav" data-key="${id}" ${id === page || (page === "habit" && id === "overview") ? 'aria-current="page"' : ""}>
       ${glyph(image)}<span>${title}</span></button>`).join("")}
     </div><button class="add" data-action="add" aria-label="添加习惯">${glyph("plus")}</button></div></nav>`;
 }
@@ -220,14 +232,14 @@ function dots(habit, cells, active, year = false) {
     return `<span class="${style}${key && key === active ? " active" : ""}"><i></i></span>`;
   }).join("")}</div>`;
 }
-function card(habit, key, mini = false) {
+function card(habit, key, mini = false, isSelected = false) {
   const done = habit.days.includes(key);
   const cells = monthCells(key);
   const count = cells.filter(day => habit.days.includes(day)).length;
   const badge = `<span class="badge">${glyph(habit.icon)}</span>`;
-  return `<article class="habit-card surface tone-${habit.tone}">
+  return `<article class="habit-card surface tone-${habit.tone}${isSelected ? " selected-card" : ""}">
     <div class="card-head">
-      <button class="card-link" data-action="detail" data-id="${habit.id}" aria-label="${escapeHTML(habit.name)}详情">${badge}<span>${escapeHTML(habit.name)}</span></button>
+      <button class="card-link" data-action="detail" data-id="${habit.id}" aria-label="${escapeHTML(habit.name)}详情"${isSelected ? ' aria-current="true"' : ""}>${badge}<span>${escapeHTML(habit.name)}</span></button>
       ${mini ? "" : `<button class="check-button" data-action="check" data-id="${habit.id}" data-key="${key}" aria-label="${escapeHTML(habit.name)}打卡" aria-pressed="${done}">
         <span>${glyph(done ? "check" : "plus")}</span></button>`}
     </div>
@@ -235,21 +247,27 @@ function card(habit, key, mini = false) {
     <p class="card-foot">本月 ${count} 次</p>
   </article>`;
 }
-function overview() {
-  const count = totalOn(selected);
-  const total = habits().length;
+function overview(selectedHabit) {
+  const active = activeHabits();
+  const count = totalOn(selected, active);
+  const total = active.length;
   return `${pageTitle("日常打卡", zhFull.format(dayFromKey(today)))}
-    <section class="hero" aria-label="打卡进度">
-      <div><h2>${selected === today ? "今日进度" : zhDate.format(dayFromKey(selected)) + "进度"}</h2>
-      <p><strong>${count}</strong><span class="subtitle"> / ${total} 项已完成</span></p></div>
-      <div class="ring" style="--fill:${total ? count / total * 100 : 0}%" aria-hidden="true"><span>${glyph(count === total && total ? "check" : "ring")}</span></div>
+    <section class="progress-card surface" aria-labelledby="progress-title">
+      <div class="progress-head">
+        <h2 id="progress-title">${selected === today ? "今日进度" : zhDate.format(dayFromKey(selected)) + "进度"}</h2>
+        <p class="progress-count"><strong>${count}</strong> / ${total} 项已完成</p>
+        <div class="ring" style="--fill:${total ? count / total * 100 : 0}%" aria-hidden="true"><span>${glyph(count === total && total ? "check" : "ring")}</span></div>
+      </div>
+      <div class="week-strip" role="group" aria-label="本周日期">
+        ${periodDays(today, "week").map((key, index) => `<button class="${totalOn(key, active) ? "has-log" : ""}" data-action="select-day" data-key="${key}" aria-label="${zhFull.format(dayFromKey(key))}" aria-pressed="${key === selected}" ${key > today ? "disabled" : ""}>
+          <span class="weekday">${weekdays[index]}</span><span>${dayFromKey(key).getDate()}</span><i></i></button>`).join("")}
+      </div>
     </section>
-    <section class="week-strip surface" aria-label="本周日期">
-    ${periodDays(today, "week").map((key, index) => `<button class="${totalOn(key) ? "has-log" : ""}" data-action="select-day" data-key="${key}" aria-label="${zhFull.format(dayFromKey(key))}" aria-pressed="${key === selected}" ${key > today ? "disabled" : ""}>
-      <span class="weekday">${weekdays[index]}</span><span>${dayFromKey(key).getDate()}</span><i></i></button>`).join("")}
-    </section>
-    <div class="section-line"><h2>我的习惯</h2><p>${dayFromKey(selected).getMonth() + 1} 月记录</p></div>
-    <section class="habit-grid" aria-label="习惯列表">${habits().map(habit => card(habit, selected)).join("")}</section>`;
+    <div class="section-line habits-heading"><h2>我的习惯</h2><div class="section-actions">
+      <p>${dayFromKey(selected).getMonth() + 1} 月记录</p><button class="manage-button" data-action="manage">管理</button>
+    </div></div>
+    ${active.length ? `<section class="habit-grid" aria-label="习惯列表">${active.map(habit => card(habit, selected, false, habit.id === selectedHabit)).join("")}</section>` : `
+      <div class="empty-state surface"><p>暂无进行中的习惯</p><button class="secondary" data-action="add">添加习惯</button></div>`}`;
 }
 function segments(current, action) {
   return `<div class="segments" role="group" aria-label="统计周期">
@@ -271,13 +289,15 @@ function detail(habit) {
     ${weekdays.map(day => `<small>${day}</small>`).join("")}
     ${cells.map(key => key ? `<button class="${entries.has(key) ? "filled" : ""}" data-action="detail-day" data-key="${key}" aria-label="${zhDate.format(dayFromKey(key))}${entries.has(key) ? "，已打卡" : ""}" aria-pressed="${key === detailDay}" ${key > today ? "disabled" : ""}>${dayFromKey(key).getDate()}<i></i></button>` : "<span></span>").join("")}
     </div>`;
-  return `<div class="detail-nav"><button data-action="nav" data-key="overview">${glyph("left")} 总览</button>
+  return `<div class="detail-nav"><button data-action="nav" data-key="overview" aria-label="返回总览">${glyph("left")} 总览</button>
     <button class="icon-button" data-action="edit" data-id="${habit.id}" aria-label="编辑习惯">${glyph("pen")}</button></div>
     <div class="tone-${habit.tone}"><header class="detail-heading"><span class="badge">${glyph(habit.icon)}</span><h1>${escapeHTML(habit.name)}</h1></header>
+    ${habit.archived ? '<p class="archive-tag">已归档</p>' : ""}
     ${segments(period, "period")}
     ${metrics("连续打卡", streak(entries, today), "天", `本${periods[period]}打卡`, count, "次")}
-    <button class="primary${done ? " checked" : ""}" data-action="check" data-id="${habit.id}" data-key="${detailDay}" aria-pressed="${done}">
-      ${glyph(done ? "check" : "plus")}${detailDay === today ? "今天" : zhDate.format(dayFromKey(detailDay))}${done ? "已打卡 · 撤销" : "打卡"}</button>
+    ${habit.archived ? `<button class="secondary restore-button" data-action="restore-habit" data-id="${habit.id}">恢复习惯</button>` :
+      `<button class="primary${done ? " checked" : ""}" data-action="check" data-id="${habit.id}" data-key="${detailDay}" aria-pressed="${done}">
+        ${glyph(done ? "check" : "plus")}${detailDay === today ? "今天" : zhDate.format(dayFromKey(detailDay))}${done ? "已打卡 · 撤销" : "打卡"}</button>`}
     <section class="detail-calendar surface"><h2>${heading}</h2>${calendar}</section></div>`;
 }
 function chartBuckets(days, type) {
@@ -315,15 +335,16 @@ function trends() {
     <section class="habit-grid" aria-label="习惯打卡次数">
     ${list.map(({ habit, count }) => `<article class="stat-row surface tone-${habit.tone}">
       <button class="card-link" data-action="detail" data-id="${habit.id}"><span class="badge">${glyph(habit.icon)}</span><span>${escapeHTML(habit.name)}</span></button>
-      <span class="count">${count} 次</span>
+      <span class="count">${count} 次${habit.archived ? " · 已归档" : ""}</span>
       <div class="track" aria-hidden="true"><i style="width:${eligible.length ? count / eligible.length * 100 : 0}%"></i></div>
     </article>`).join("")}</section>`;
 }
 function widgets() {
-  const first = habits()[0];
+  const active = activeHabits();
+  const first = active[0];
   return `${pageTitle("小组件", "主屏幕样式预览")}
     <div class="widget-board">
-      <section class="widget surface"><h2>本月习惯</h2><div class="habit-grid">${habits().slice(0, 2).map(habit => card(habit, today, true)).join("")}</div></section>
+      <section class="widget surface"><h2>本月习惯</h2>${first ? `<div class="habit-grid">${active.slice(0, 2).map(habit => card(habit, today, true)).join("")}</div>` : "<p>暂无进行中的习惯</p>"}</section>
       ${first ? `<section class="widget surface tone-${first.tone}"><h2>${escapeHTML(first.name)} · 全年</h2>
         ${dots(first, periodDays(today, "year"), null, true)}</section>` : ""}
     </div>
@@ -331,14 +352,79 @@ function widgets() {
 }
 function render() {
   const focus = document.activeElement;
-  const match = focus?.dataset.action && [...app.querySelectorAll("button")].includes(focus) ? { ...focus.dataset } : null;
+  const match = focus?.dataset.action && app.contains(focus) ? { ...focus.dataset } : null;
+  const detailFocused = focus?.closest(".detail-pane");
   const { page, habit } = route();
-  const content = page === "habit" ? detail(habit) : page === "trends" ? trends() : page === "widgets" ? widgets() : overview();
-  app.innerHTML = `<main class="shell">${content}</main>${page === "habit" ? "" : dock(page)}`;
+  const content = page === "habit" ? `<section class="overview-pane" aria-label="习惯总览">${overview(habit.id)}</section>
+    <section class="detail-pane" aria-label="习惯详情">${detail(habit)}</section>` :
+    page === "trends" ? trends() : page === "widgets" ? widgets() : overview();
+  app.innerHTML = `<main class="shell${page === "habit" ? " habit-layout" : ""}">${content}</main>${dock(page)}`;
+  if (manager.open) renderManager();
   if (match) {
-    const successor = [...app.querySelectorAll("button")].find(button => Object.entries(match).every(([key, value]) => button.dataset[key] === value));
+    const scope = detailFocused ? app.querySelector(".detail-pane") : app;
+    const successor = [...(scope?.querySelectorAll("button") ?? [])].find(button => Object.entries(match).every(([key, value]) => button.dataset[key] === value));
     successor?.focus({ preventScroll: true });
   }
+}
+function renderManager() {
+  const focus = managerList.contains(document.activeElement) ? document.activeElement.dataset : null;
+  const active = activeHabits();
+  const archived = habits().filter(habit => habit.archived);
+  const item = (habit, controls) => `<li class="manage-row tone-${habit.tone}" data-habit="${habit.id}">
+    <button class="card-link" data-action="managed-detail" data-id="${habit.id}" aria-label="${escapeHTML(habit.name)}详情">
+      <span class="badge">${glyph(habit.icon)}</span><span>${escapeHTML(habit.name)}</span>
+    </button>
+    <div class="manage-controls">${controls}</div></li>`;
+  managerList.innerHTML = `<section class="manage-section" aria-labelledby="active-title">
+    <h3 id="active-title">进行中 <span>${active.length}</span></h3>
+    ${active.length ? `<ul>${active.map((habit, index) => item(habit, `
+      <button class="move-button" data-action="reorder" data-id="${habit.id}" data-key="up" aria-label="上移${escapeHTML(habit.name)}" ${index === 0 ? "disabled" : ""}>${glyph("up")}</button>
+      <button class="move-button" data-action="reorder" data-id="${habit.id}" data-key="down" aria-label="下移${escapeHTML(habit.name)}" ${index === active.length - 1 ? "disabled" : ""}>${glyph("down")}</button>
+      <button class="manage-text" data-action="archive-habit" data-id="${habit.id}" aria-label="归档${escapeHTML(habit.name)}">归档</button>
+    `)).join("")}</ul>` : '<p class="manage-empty">暂无进行中的习惯</p>'}
+  </section>
+  <section class="manage-section" aria-labelledby="archived-title">
+    <h3 id="archived-title">已归档 <span>${archived.length}</span></h3>
+    ${archived.length ? `<ul>${archived.map(habit => item(habit, `
+      <button class="manage-text" data-action="restore-habit" data-id="${habit.id}" aria-label="恢复${escapeHTML(habit.name)}">恢复</button>
+    `)).join("")}</ul>` : '<p class="manage-empty">暂无已归档的习惯</p>'}
+  </section>`;
+  if (!focus) return;
+  const candidates = [...managerList.querySelectorAll("button:not(:disabled)")].filter(button => button.dataset.id === focus.id);
+  const next = candidates.find(button => button.dataset.action === focus.action && button.dataset.key === focus.key)
+    ?? candidates.find(button => button.dataset.action !== "managed-detail");
+  next?.focus({ preventScroll: true });
+}
+function reorderHabit(id, direction) {
+  const list = habits();
+  const active = activeHabits();
+  const index = active.findIndex(habit => habit.id === id);
+  const neighbor = active[index + (direction === "up" ? -1 : 1)];
+  if (index < 0 || !neighbor) return;
+  const from = list.indexOf(active[index]);
+  const to = list.indexOf(neighbor);
+  [list[from], list[to]] = [list[to], list[from]];
+  if (!save()) [list[from], list[to]] = [list[to], list[from]];
+  render();
+}
+function setArchived(id, archived) {
+  const habit = habits().find(item => item.id === id);
+  if (!habit || Boolean(habit.archived) === archived) return;
+  const previous = habit.archived;
+  habit.archived = archived;
+  if (!save()) {
+    habit.archived = previous;
+    return;
+  }
+  render();
+  notify(archived ? "习惯已归档，历史记录已保留" : "习惯已恢复");
+}
+function openDetail(id) {
+  const page = "habit/" + id;
+  if (location.hash === "#" + page) return;
+  period = "month";
+  detailDay = selected;
+  go(page);
 }
 function editorOptions() {
   document.querySelector("#icon-options").innerHTML = Object.entries(iconNames).map(([key, name]) =>
@@ -348,31 +434,76 @@ function editorOptions() {
 }
 function showEditor(id) {
   const source = habits().find(habit => habit.id === id);
+  if (id && !source) return;
+  editingExisting = Boolean(source);
   editing = source ? { ...source } : { id: crypto.randomUUID?.() || Math.random().toString(36).slice(2), name: "", icon: "star", tone: "violet", days: [] };
   document.querySelector("#editor-title").textContent = source ? "编辑习惯" : "添加习惯";
   nameInput.value = editing.name;
   nameInput.setCustomValidity("");
+  deleteConfirmation.hidden = true;
+  editActions.hidden = !source;
+  archiveAction.textContent = source?.archived ? "恢复习惯" : "归档习惯";
   editorOptions();
   editor.showModal();
-  nameInput.focus();
+  if (!source) nameInput.focus();
+}
+function showDeleteConfirmation() {
+  const habit = habits().find(item => item.id === editing?.id);
+  if (!editor.open || !editingExisting || !habit) return;
+  const records = habit.days.length ? `及其 ${habit.days.length} 条打卡记录` : "";
+  deleteDescription.textContent = `将永久删除「${habit.name}」${records}。`;
+  deleteConfirmation.hidden = false;
+  deleteConfirmation.querySelector('[data-action="cancel-delete"]').focus();
+}
+function cancelDelete() {
+  deleteConfirmation.hidden = true;
+  editActions.querySelector('[data-action="ask-delete"]').focus();
+}
+function deleteHabit() {
+  if (!editor.open || deleteConfirmation.hidden || !editingExisting) return;
+  const list = habits();
+  const index = list.findIndex(habit => habit.id === editing.id);
+  if (index < 0) return;
+  const [removed] = list.splice(index, 1);
+  if (!save()) {
+    list.splice(index, 0, removed);
+    deleteDescription.textContent = "暂时无法保存删除操作。习惯和记录仍在，请重试。";
+    return;
+  }
+  editor.close();
+  if (location.hash === "#habit/" + removed.id) go("overview");
+  else render();
+  notify("习惯已删除");
 }
 document.querySelector("#habit-form").addEventListener("submit", event => {
   event.preventDefault();
+  if (!deleteConfirmation.hidden) return;
   const name = nameInput.value.trim();
   if (!name) {
     nameInput.setCustomValidity("请输入习惯名称");
     nameInput.reportValidity();
     return;
   }
-  editing.name = name;
   const list = habits();
   const index = list.findIndex(habit => habit.id === editing.id);
-  if (index < 0) list.push(editing);
-  else list[index] = editing;
+  if (editingExisting && index < 0) {
+    editor.close();
+    notify("此习惯已删除");
+    return;
+  }
+  const { icon, tone } = editing;
+  if (index < 0) list.push({ ...editing, name });
+  else list[index] = { ...list[index], name, icon, tone };
   const saved = save();
   editor.close();
   render();
   if (saved) notify(index < 0 ? "已添加习惯" : "已保存修改");
+});
+editor.addEventListener("cancel", event => {
+  if (!deleteConfirmation.hidden) {
+    event.preventDefault();
+    cancelDelete();
+  }
 });
 nameInput.addEventListener("input", () => nameInput.setCustomValidity(""));
 document.addEventListener("click", event => {
@@ -381,15 +512,35 @@ document.addEventListener("click", event => {
   const { action, id, key } = button.dataset;
   switch (action) {
     case "nav": go(key); break;
-    case "detail": period = "month"; detailDay = selected; go("habit/" + id); break;
+    case "detail": openDetail(id); break;
+    case "managed-detail": manager.close(); openDetail(id); break;
     case "check": toggle(id, key); break;
-    case "select-day": selected = key; render(); break;
+    case "select-day":
+      selected = key;
+      if (route().page === "habit") detailDay = key;
+      render();
+      break;
     case "detail-day": detailDay = key; render(); break;
     case "period": period = key; render(); break;
     case "trends-period": trendsPeriod = key; render(); break;
     case "add": showEditor(); break;
     case "edit": showEditor(id); break;
     case "close-editor": editor.close(); break;
+    case "manage": renderManager(); manager.showModal(); break;
+    case "close-manager": manager.close(); break;
+    case "reorder": reorderHabit(id, key); break;
+    case "archive-habit": setArchived(id, true); break;
+    case "restore-habit": setArchived(id, false); break;
+    case "archive-edited": {
+      const habit = habits().find(item => item.id === editing?.id);
+      if (!habit) break;
+      setArchived(habit.id, !habit.archived);
+      archiveAction.textContent = habit.archived ? "恢复习惯" : "归档习惯";
+      break;
+    }
+    case "ask-delete": showDeleteConfirmation(); break;
+    case "cancel-delete": cancelDelete(); break;
+    case "delete-habit": deleteHabit(); break;
     case "pick-icon":
     case "pick-tone": {
       editing[action === "pick-icon" ? "icon" : "tone"] = key;
@@ -409,9 +560,10 @@ document.addEventListener("click", event => {
 });
 function navigate() {
   if (!initialNavigation) {
-    window.scrollTo(0, 0);
+    const switchingPane = route().page === "habit" && app.querySelector(".overview-pane")?.getClientRects().length;
+    if (!switchingPane) window.scrollTo(0, 0);
     render();
-    const heading = app.querySelector("h1");
+    const heading = app.querySelector(".detail-pane h1") ?? app.querySelector("h1");
     heading.setAttribute("tabindex", "-1");
     heading.focus({ preventScroll: true });
   } else {
@@ -437,6 +589,10 @@ window.addEventListener("storage", event => {
   }
   if (event.key !== storageKey && event.key !== null) return;
   store = loadStore();
+  if (preview !== (store.mode === "demo")) {
+    if (editor.open) editor.close();
+    if (manager.open) manager.close();
+  }
   preview = store.mode === "demo";
   render();
 });

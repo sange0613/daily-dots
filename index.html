@@ -10,8 +10,8 @@
   <meta name="description" content="在 iPhone 上记录习惯，用圆点日历浏览打卡进度。">
   <link rel="apple-touch-icon" href="icon.png">
   <link rel="icon" href="icon.png" type="image/png">
-  <link rel="stylesheet" href="style.css?v=2">
-  <script src="app.js?v=2" defer></script>
+  <link rel="stylesheet" href="style.css?v=3">
+  <script src="app.js?v=3" defer></script>
   <title>日常打卡</title>
 </head>
 <body>
@@ -34,7 +34,26 @@
         <div id="tone-options" class="options"></div>
       </fieldset>
       <button class="primary" type="submit">保存习惯</button>
+      <div id="edit-actions" class="edit-actions" hidden>
+        <button id="archive-action" class="secondary" type="button" data-action="archive-edited">归档习惯</button>
+        <button class="danger-link" type="button" data-action="ask-delete">删除习惯</button>
+      </div>
+      <section id="delete-confirmation" class="delete-confirmation" aria-labelledby="delete-title" hidden>
+        <h3 id="delete-title">删除习惯？</h3>
+        <p id="delete-description"></p>
+        <div class="confirm-actions">
+          <button class="secondary" type="button" data-action="cancel-delete">取消</button>
+          <button class="danger" type="button" data-action="delete-habit">确认删除</button>
+        </div>
+      </section>
     </form>
+  </dialog>
+  <dialog id="manager" class="manage-dialog" aria-labelledby="manager-title">
+    <div class="dialog-head">
+      <h2 id="manager-title">管理习惯</h2>
+      <button class="icon-button" type="button" data-action="close-manager" aria-label="关闭">×</button>
+    </div>
+    <div id="manager-list"></div>
   </dialog>
 </body>
 </html>

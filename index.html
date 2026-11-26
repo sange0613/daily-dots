@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f3f8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="日常打卡">
+  <meta name="description" content="在 iPhone 上记录习惯，用圆点日历浏览打卡进度。">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" href="icon.png" type="image/png">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+  <title>日常打卡</title>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="notice" role="status" class="notice" hidden></div>
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form id="habit-form">
+      <div class="dialog-head">
+        <h2 id="editor-title">添加习惯</h2>
+        <button class="icon-button" type="button" data-action="close-editor" aria-label="关闭">×</button>
+      </div>
+      <label for="habit-name">习惯名称</label>
+      <input id="habit-name" name="name" type="text" placeholder="例如：读书" maxlength="16" required>
+      <fieldset>
+        <legend>图标</legend>
+        <div id="icon-options" class="options"></div>
+      </fieldset>
+      <fieldset>
+        <legend>颜色</legend>
+        <div id="tone-options" class="options"></div>
+      </fieldset>
+      <button class="primary" type="submit">保存习惯</button>
+    </form>
+  </dialog>
+</body>
+</html>
